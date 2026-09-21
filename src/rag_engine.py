@@ -1,4 +1,5 @@
 import os
+import re
 import shutil
 import uuid
 from pathlib import Path
@@ -115,6 +116,38 @@ def run_career_coach(vectorstore, resume_text: str, jd_text: str, question: str)
     chain = prompt | llm | StrOutputParser()
     answer = chain.invoke({"context": context, "question": question})
     return answer, source_docs
+
+
+def evaluate_answer(vectorstore, question: str, answer: str):
+    context, _ = retrieve_context(vectorstore, question, k=5)
+    prompt = ChatPromptTemplate.from_template(
+        """
+        Evaluate whether the answer is accurate and supported by the provided resume and job description context.
+        Do not reward information that is not present in the context. Consider factual support, relevance,
+        and whether the answer avoids inventing skills, experience, or requirements.
+
+        CONTEXT:
+        {context}
+
+        QUESTION:
+        {question}
+
+        ANSWER:
+        {answer}
+
+        Return exactly this format:
+        SCORE: <integer from 0 to 100>
+        REASON: <one short sentence>
+        """
+    )
+    evaluation = (prompt | get_llm() | StrOutputParser()).invoke(
+        {"context": context, "question": question, "answer": answer}
+    )
+    score_match = re.search(r"SCORE\s*:\s*(\d{1,3})", evaluation, re.IGNORECASE)
+    score = max(0, min(100, int(score_match.group(1)))) if score_match else None
+    reason_match = re.search(r"REASON\s*:\s*(.+)", evaluation, re.IGNORECASE | re.DOTALL)
+    reason = reason_match.group(1).strip() if reason_match else evaluation.strip()
+    return score, reason
 
 
 def generate_complete_report(vectorstore, resume_text: str, jd_text: str):

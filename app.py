@@ -9,6 +9,7 @@ from src.rag_engine import (
     build_vectorstore,
     run_career_coach,
     generate_complete_report,
+    evaluate_answer,
 )
 
 st.set_page_config(
@@ -111,8 +112,19 @@ if st.session_state.vectorstore:
                 jd_text,
                 final_question,
             )
+            try:
+                accuracy_score, accuracy_reason = evaluate_answer(
+                    st.session_state.vectorstore,
+                    final_question,
+                    answer,
+                )
+            except Exception:
+                accuracy_score, accuracy_reason = None, "Accuracy check unavailable."
 
         st.markdown("## 🎯 Career Coach Response")
+        if accuracy_score is not None:
+            st.metric("Answer accuracy", f"{accuracy_score}%")
+            st.caption(f"Groundedness check: {accuracy_reason}")
         st.write(answer)
 
         with st.expander("🔍 Retrieved Context Used by RAG"):
