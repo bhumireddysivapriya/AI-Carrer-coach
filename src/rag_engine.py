@@ -1,7 +1,6 @@
 import os
 import re
 import shutil
-import uuid
 from pathlib import Path
 from typing import List
 
@@ -16,6 +15,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 load_dotenv()
 DB_DIR = "chroma_db"
+COLLECTION_NAME = "work_visa_consultancy"
 
 
 # loading of model
@@ -39,10 +39,14 @@ def load_text_file(file_path: str, source_name: str, doc_type: str):
     return [Document(page_content=text, metadata={"source": source_name, "doc_type": doc_type})]
 
 
-def create_documents(resume_text: str, jd_text: str):
+def create_documents(uploaded_documents):
     return [
-        Document(page_content=resume_text, metadata={"source": "uploaded_resume", "doc_type": "resume"}),
-        Document(page_content=jd_text, metadata={"source": "uploaded_resume", "doc_type": "job_description"}),
+        Document(
+            page_content=text,
+            metadata={"source": file_name, "doc_type": "work_visa_reference"},
+        )
+        for file_name, text in uploaded_documents
+        if text.strip()
     ]
 
 
@@ -61,18 +65,26 @@ def split_documents(docs: List[Document], chunk_size=800, chunk_overlap=150, sep
 def build_vectorstore(chunks: List[Document], persist_directory: str = DB_DIR):
     directory = Path(persist_directory)
     if directory.exists():
-        try:
-            shutil.rmtree(directory)
-        except PermissionError:
-            directory = directory.with_name(f"{directory.name}_{uuid.uuid4().hex[:8]}")
+        shutil.rmtree(directory)
 
     vectorstore = Chroma.from_documents(
         documents=chunks,
         embedding=get_embeddings(),
         persist_directory=str(directory),
-        collection_name="career_coach_rag",
+        collection_name=COLLECTION_NAME,
     )
     return vectorstore
+
+
+def load_vectorstore(persist_directory: str = DB_DIR):
+    directory = Path(persist_directory)
+    if not (directory / "chroma.sqlite3").exists():
+        return None
+    return Chroma(
+        collection_name=COLLECTION_NAME,
+        embedding_function=get_embeddings(),
+        persist_directory=str(directory),
+    )
 
 
 # retrieval pipeline
@@ -82,19 +94,22 @@ def retrieve_context(vectorstore, query: str, k: int = 3):
     return context, docs
 
 
-def run_career_coach(vectorstore, resume_text: str, jd_text: str, question: str):
+def run_career_coach(vectorstore, question: str):
     llm = get_llm()
     retrieval_query = (
-        "Use the resume and job description content to answer this career question accurately. "
+        "Use the work visa consultancy reference documents to answer this question accurately. "
         f"Question: {question}"
     )
     context, source_docs = retrieve_context(vectorstore, retrieval_query, k=5)
 
     prompt = ChatPromptTemplate.from_template(
         """
-        You are an expert AI career coach for students, freshers, and working professionals.
-        Use only the given context from the resume and job description.
-        Do not invent skills, experience, or job requirements.
+        You are a careful work visa consultancy assistant.
+        Use only the provided reference documents. Do not invent visa rules, eligibility,
+        timelines, fees, documents, legal advice, or government requirements.
+        If the documents do not contain the answer, say that clearly and recommend
+        checking the relevant official immigration authority or a qualified attorney.
+        Explain which country, visa category, and date matter when relevant.
 
         CONTEXT:
         {context}
@@ -102,15 +117,8 @@ def run_career_coach(vectorstore, resume_text: str, jd_text: str, question: str)
         USER QUESTION:
         {question}
 
-        Give a clear, practical answer with these sections when relevant:
-        1. Current Match Summary
-        2. Strengths
-        3. Missing skills / Gaps
-        4. Recommended Improvements
-        5. Suggested Projects
-        6. Interview Preparation Tips
-
-        Keep the answer simple, actionable, and beginner-friendly.
+        Give a clear, concise answer. Separate documented facts from uncertainty.
+        Never present the response as a substitute for professional legal advice.
         """
     )
     chain = prompt | llm | StrOutputParser()
@@ -149,11 +157,17 @@ def evaluate_answer(vectorstore, question: str, answer: str):
     reason = reason_match.group(1).strip() if reason_match else evaluation.strip()
     return score, reason
 
+__all__ = [
+    "build_vectorstore",
+    "create_documents",
+    "evaluate_answer",
+    "load_vectorstore",
+    "run_career_coach",
+    "split_documents",
+]
 
-def generate_complete_report(vectorstore, resume_text: str, jd_text: str):
-    question = """
-    Analyze this resume against this job description. Provide an ATS-style score,
-    skill match summary, missing skills, resume improvement suggestions,
-    project suggestions, and interview questions.
-    """
-    return run_career_coach(vectorstore, resume_text, jd_text, question)
+
+
+
+
+

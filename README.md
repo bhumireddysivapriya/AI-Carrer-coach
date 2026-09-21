@@ -1,24 +1,18 @@
-# Traditional rag
-This project is an end-to-end **traditional RAG application** 
+# Work Visa Consultancy RAG
+This project is an end-to-end **work visa consultancy RAG application**.
 It uses
 - Langchain
 - Groq chat model
 - HuggingFace Embeddings
 - streamlit UI
-- Resume + Job Description analysis
+- Persistent work visa reference knowledge base
 
 ## Features
-- Upload Resume as '.txt', '.pdf', or '.docx'
 
-- upload Job Description as '.txt', '.pdf', or '.docx'
-- Build a RAG index from both documents
-- Retrieve relevent context from Resume and JD
-- Generate:
-- Resume match summary
-- Skill Gap analysis
-- Resume improvement suggestions
-- project recommendations
-- Interview preparation questions
+- Admin-only upload of visa policies, checklists, and country guides as '.txt', '.pdf', or '.docx'
+- Persistent backend Chroma index for uploaded reference documents
+- User-facing chat that answers only from the indexed documents
+- Grounded reference accuracy score for each answer
 
 ## RAG stages covered
 1. Document LOading
@@ -27,7 +21,7 @@ It uses
 4. Vector Database storages
 5. QUery Embedding
 6. context Retrieval
-7. LLM Answer Generation
+7. LLM Answer Generation in the chat
 ## setup
 ### 1. Create virtual environment
 '''bash
@@ -42,12 +36,15 @@ venv\Scripts\activate
 ''' bash
 pip install -r requirements.txt
 '''
-### 4. Add Groq API key
+### 4. Add API and admin settings
 Create a '.env' file:
 ''' env
 GROQ_API_KEY=
 GROQ_MODEL=openai/gpt-oss-20b
+ADMIN_PASSWORD=choose-a-strong-admin-password
 ''' 
+The `ADMIN_PASSWORD` protects the backend document uploader. End users only see the chat.
+
 ### 5. Run app
 ''' bash
 streamlit run app.py

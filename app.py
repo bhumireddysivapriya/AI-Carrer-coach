@@ -8,7 +8,6 @@ from src.rag_engine import (
     split_documents,
     build_vectorstore,
     run_career_coach,
-    generate_complete_report,
     evaluate_answer,
 )
 
@@ -53,16 +52,22 @@ col1, col2 = st.columns(2)
 
 with col1:
     st.subheader("📄 Upload Resume")
-    resume_file = st.file_uploader("Upload resume (.txt, .pdf, .docx)", type=["txt", "pdf", "docx"], key="resume")
-    resume_text_input = st.text_area("Or paste resume text", height=220, key="resume_text")
+    resume_file = st.file_uploader(
+        "Upload resume (.txt, .pdf, .docx)",
+        type=["txt", "pdf", "docx"],
+        key="resume",
+    )
 
 with col2:
     st.subheader("💼 Upload Job Description")
-    jd_file = st.file_uploader("Upload JD (.txt, .pdf, .docx)", type=["txt", "pdf", "docx"], key="jd")
-    jd_text_input = st.text_area("Or paste job description", height=220, key="jd_text")
+    jd_file = st.file_uploader(
+        "Upload JD (.txt, .pdf, .docx)",
+        type=["txt", "pdf", "docx"],
+        key="jd",
+    )
 
-resume_text = read_uploaded_file(resume_file) if resume_file else resume_text_input
-jd_text = read_uploaded_file(jd_file) if jd_file else jd_text_input
+resume_text = read_uploaded_file(resume_file) if resume_file else ""
+jd_text = read_uploaded_file(jd_file) if jd_file else ""
 
 if "vectorstore" not in st.session_state:
     st.session_state.vectorstore = None
@@ -82,6 +87,7 @@ if st.button("🚀 Build Career Coach RAG Index", type="primary"):
 
             st.session_state.vectorstore = vectorstore
             st.session_state.chunks = chunks
+            st.session_state.chat_history = []
 
         st.success("RAG index created successfully!")
         c1, c2, c3 = st.columns(3)
@@ -90,63 +96,58 @@ if st.button("🚀 Build Career Coach RAG Index", type="primary"):
         c3.metric("Vector DB", "ChromaDB")
 
 if st.session_state.vectorstore:
-    st.markdown("### ✅ Ask Career Questions")
+    st.markdown("### 💬 Career Coach Chat")
 
-    quick_questions = [
-        "How well does this resume match the job description?",
-        "What are the missing skills for this role?",
-        "How can I improve this resume?",
-        "Suggest 3 projects to become suitable for this role.",
-        "Generate interview questions based on the skill gaps.",
-    ]
+    if "chat_history" not in st.session_state:
+        st.session_state.chat_history = []
 
-    selected = st.selectbox("Choose a question", quick_questions)
-    custom_question = st.text_input("Or ask your own question")
-    final_question = custom_question if custom_question else selected
-
-    if st.button("🤖 Get Career Coach Answer"):
-        with st.spinner("Retrieving context and generating answer..."):
-            answer, sources = run_career_coach(
-                st.session_state.vectorstore,
-                resume_text,
-                jd_text,
-                final_question,
-            )
-            try:
-                accuracy_score, accuracy_reason = evaluate_answer(
-                    st.session_state.vectorstore,
-                    final_question,
-                    answer,
+    for message in st.session_state.chat_history:
+        with st.chat_message(message["role"]):
+            st.write(message["content"])
+            if message.get("accuracy_score") is not None:
+                st.caption(
+                    f"Accuracy: {message['accuracy_score']}% - "
+                    f"{message['accuracy_reason']}"
                 )
-            except Exception:
-                accuracy_score, accuracy_reason = None, "Accuracy check unavailable."
 
-        st.markdown("## 🎯 Career Coach Response")
-        if accuracy_score is not None:
-            st.metric("Answer accuracy", f"{accuracy_score}%")
-            st.caption(f"Groundedness check: {accuracy_reason}")
-        st.write(answer)
+    question = st.chat_input("Ask a question about your documents")
+    if question:
+        st.session_state.chat_history.append({"role": "user", "content": question})
+        with st.chat_message("user"):
+            st.write(question)
 
-        with st.expander("🔍 Retrieved Context Used by RAG"):
-            for i, doc in enumerate(sources, 1):
-                st.markdown(f"#### Source Chunk {i}")
-                st.caption(str(doc.metadata))
-                st.write(doc.page_content[:1200])
+        with st.chat_message("assistant"):
+            with st.spinner("Searching your documents..."):
+                answer, _ = run_career_coach(
+                    st.session_state.vectorstore,
+                    resume_text,
+                    jd_text,
+                    question,
+                )
+                try:
+                    accuracy_score, accuracy_reason = evaluate_answer(
+                        st.session_state.vectorstore,
+                        question,
+                        answer,
+                    )
+                except Exception:
+                    accuracy_score, accuracy_reason = None, "Accuracy check unavailable."
 
-    st.divider()
+            st.write(answer)
+            if accuracy_score is not None:
+                st.caption(f"Accuracy: {accuracy_score}% - {accuracy_reason}")
 
-    if st.button("📊 Generate Complete Career Report"):
-        with st.spinner("Generating complete RAG-based career report..."):
-            report, sources = generate_complete_report(
-                st.session_state.vectorstore,
-                resume_text,
-                jd_text,
-            )
-        st.markdown("## 📊 Complete Career Report")
-        st.write(report)
+        st.session_state.chat_history.append(
+            {
+                "role": "assistant",
+                "content": answer,
+                "accuracy_score": accuracy_score,
+                "accuracy_reason": accuracy_reason,
+            }
+        )
 
 else:
-    st.info("Upload/paste Resume and Job Description, then click 'Build Career Coach RAG Index'.")
+    st.info("Upload both documents, then click 'Build Career Coach RAG Index' to start chatting.")
 
 st.divider()
 st.markdown("### 🧠 How this Traditional RAG Project Works")
